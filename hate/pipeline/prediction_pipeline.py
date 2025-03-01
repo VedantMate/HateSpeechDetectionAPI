@@ -2,92 +2,113 @@ import os
 import sys
 import keras
 import pickle
-from PIL import Image
-from hate.logger import logging
-from hate.constants import *
-from hate.exception import CustomException
 from keras.utils import pad_sequences
+from hate.logger import logging
+from hate.constants import MODEL_NAME  # Ensure MODEL_NAME is defined in your constants
+from hate.exception import CustomException
 from hate.components.data_transforamation import DataTransformation
 from hate.entity.config_entity import DataTransformationConfig
 from hate.entity.artifact_entity import DataIngestionArtifacts
+
+# -----------------------------------------------
+# Global Initialization: Load the model and tokenizer once
+# -----------------------------------------------
+
+# Define the paths for your model and tokenizer
+MODEL_PATH = os.path.join("artifacts", "PredictModel", MODEL_NAME)
+TOKENIZER_PATH = "tokenizer.pickle"  # Adjust the path if necessary
+
+try:
+    GLOBAL_MODEL = keras.models.load_model(MODEL_PATH)
+    with open(TOKENIZER_PATH, 'rb') as handle:
+        GLOBAL_TOKENIZER = pickle.load(handle)
+    logging.info("Global model and tokenizer loaded successfully")
+except Exception as e:
+    logging.error("Error loading global model/tokenizer", exc_info=True)
+    raise CustomException(e, sys)
+
+# -----------------------------------------------
+# PredictionPipeline Class Definition
+# -----------------------------------------------
 
 class PredictionPipeline:
     def __init__(self):
         self.model_name = MODEL_NAME
         self.model_path = os.path.join("artifacts", "PredictModel")
+        # Create an instance of DataTransformation.
+        # IMPORTANT: Pass in actual configuration instances instead of the classes themselves.
         self.data_transformation = DataTransformation(
-            data_transformation_config=DataTransformationConfig,
-            data_ingestion_artifacts=DataIngestionArtifacts
+            data_transformation_config=DataTransformationConfig,  # Provide a configured instance if available
+            data_ingestion_artifacts=DataIngestionArtifacts        # Provide a configured instance if available
         )
 
-    def get_model_from_local(self) -> str:
+    def predict(self, text: str) -> str:
         """
-        Method Name :   get_model_from_local
-        Description :   This method loads the model from local directory
-        Output      :   best_model_path
+        Load preprocessed text, convert to sequences using the global tokenizer, 
+        pad sequences, and make a prediction using the global model.
         """
-        logging.info("Entered the get_model_from_local method of PredictionPipeline class")
-        try:
-            # Ensure the model directory exists
-            os.makedirs(self.model_path, exist_ok=True)
-            best_model_path = os.path.join(self.model_path, self.model_name)
-
-            # Check if the model file exists locally
-            if not os.path.exists(best_model_path):
-                raise FileNotFoundError(f"Model {self.model_name} not found locally.")
-
-            logging.info(f"Model loaded from {best_model_path}")
-            logging.info("Exited the get_model_from_local method of PredictionPipeline class")
-
-            return best_model_path
-
-        except Exception as e:
-            raise CustomException(e, sys) from e
-
-    def predict(self, best_model_path, text):
-        """load model, preprocess text, and make predictions"""
         logging.info("Running the predict function")
         try:
-            # Load the model
-            load_model = keras.models.load_model(best_model_path)
-
-            # Load the tokenizer
-            with open('tokenizer.pickle', 'rb') as handle:
-                load_tokenizer = pickle.load(handle)
-
-            # Data transformation and cleaning
-            text = self.data_transformation.concat_data_cleaning(text)
-            text = [text]  # Model expects a list of text
+            # Clean and transform the input text
+            transformed_text = self.data_transformation.concat_data_cleaning(text)
+            # The tokenizer expects a list of texts
+            text_list = [transformed_text]
             
-            # Text preprocessing
-            seq = load_tokenizer.texts_to_sequences(text)
-            padded = pad_sequences(seq, maxlen=300)
-
-            # Prediction
-            pred = load_model.predict(padded)
-
-            # Return prediction result
-            if pred > 0.5:
+            # Tokenize using the preloaded global tokenizer
+            sequences = GLOBAL_TOKENIZER.texts_to_sequences(text_list)
+            # Pad the sequences (ensure maxlen is set appropriately; here it is hardcoded to 300)
+            padded = pad_sequences(sequences, maxlen=300)
+            
+            # Use the preloaded global model to predict
+            pred = GLOBAL_MODEL.predict(padded)
+            # Extract the prediction score (assuming a single output value)
+            prediction_score = pred[0][0] if pred.ndim > 1 else pred[0]
+            logging.info(f"Prediction score: {prediction_score}")
+            
+            # Return a label based on the prediction threshold
+            if prediction_score > 0.5:
                 logging.info("Predicted: hate and abusive")
                 return "hate and abusive"
             else:
                 logging.info("Predicted: no hate")
                 return "no hate"
-
         except Exception as e:
             raise CustomException(e, sys) from e
 
-    def run_pipeline(self, text):
+    def run_pipeline(self, text: str) -> str:
+        """
+        Entry point to run the prediction pipeline.
+        """
         logging.info("Entered the run_pipeline method of PredictionPipeline class")
         try:
-            # Load model from local directory
-            best_model_path = self.get_model_from_local()
-
-            # Run prediction on the provided text
-            predicted_text = self.predict(best_model_path, text)
-
+            result = self.predict(text)
             logging.info("Exited the run_pipeline method of PredictionPipeline class")
-            return predicted_text
-
+            return result
         except Exception as e:
             raise CustomException(e, sys) from e
+
+# -----------------------------------------------
+# Example Usage:
+# In your API endpoint, you can initialize PredictionPipeline once 
+# and then call run_pipeline() for each request.
+#
+# Example (e.g., using Flask):
+#
+# from flask import Flask, request, jsonify
+# app = Flask(__name__)
+# pipeline = PredictionPipeline()  # Initialize once on startup
+#
+# @app.route('/predict', methods=['POST'])
+# def predict_endpoint():
+#     data = request.get_json()
+#     text = data.get("text", "")
+#     try:
+#         result = pipeline.run_pipeline(text)
+#         return jsonify({"prediction": result})
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+#
+# if __name__ == '__main__':
+#     app.run()
+# -----------------------------------------------
+
