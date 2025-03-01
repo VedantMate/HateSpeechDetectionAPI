@@ -22,9 +22,9 @@ try:
     GLOBAL_MODEL = keras.models.load_model(MODEL_PATH)
     with open(TOKENIZER_PATH, 'rb') as handle:
         GLOBAL_TOKENIZER = pickle.load(handle)
-    logging.info("Global model and tokenizer loaded successfully")
+    #logging.info("Global model and tokenizer loaded successfully")
 except Exception as e:
-    logging.error("Error loading global model/tokenizer", exc_info=True)
+    #logging.error("Error loading global model/tokenizer", exc_info=True)
     raise CustomException(e, sys)
 
 # -----------------------------------------------
@@ -47,7 +47,7 @@ class PredictionPipeline:
         Load preprocessed text, convert to sequences using the global tokenizer, 
         pad sequences, and make a prediction using the global model.
         """
-        logging.info("Running the predict function")
+        #logging.info("Running the predict function")
         try:
             # Clean and transform the input text
             transformed_text = self.data_transformation.concat_data_cleaning(text)
@@ -63,14 +63,14 @@ class PredictionPipeline:
             pred = GLOBAL_MODEL.predict(padded)
             # Extract the prediction score (assuming a single output value)
             prediction_score = pred[0][0] if pred.ndim > 1 else pred[0]
-            logging.info(f"Prediction score: {prediction_score}")
+            #logging.info(f"Prediction score: {prediction_score}")
             
             # Return a label based on the prediction threshold
             if prediction_score > 0.5:
-                logging.info("Predicted: hate and abusive")
+                #logging.info("Predicted: hate and abusive")
                 return "hate and abusive"
             else:
-                logging.info("Predicted: no hate")
+                #logging.info("Predicted: no hate")
                 return "no hate"
         except Exception as e:
             raise CustomException(e, sys) from e
@@ -79,10 +79,10 @@ class PredictionPipeline:
         """
         Entry point to run the prediction pipeline.
         """
-        logging.info("Entered the run_pipeline method of PredictionPipeline class")
+        #logging.info("Entered the run_pipeline method of PredictionPipeline class")
         try:
             result = self.predict(text)
-            logging.info("Exited the run_pipeline method of PredictionPipeline class")
+            #logging.info("Exited the run_pipeline method of PredictionPipeline class")
             return result
         except Exception as e:
             raise CustomException(e, sys) from e
