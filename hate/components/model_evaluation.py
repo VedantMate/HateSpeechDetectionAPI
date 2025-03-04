@@ -4,151 +4,130 @@ import keras
 import pickle
 import numpy as np
 import pandas as pd
+from keras.utils import pad_sequences
+from keras.preprocessing.text import Tokenizer
+from sklearn.metrics import confusion_matrix
 from hate.logger import logging
 from hate.exception import CustomException
-from keras.utils import pad_sequences
-from hate.constants import *
-# from hate.ml.model import ModelArchitecture
-from hate.configuration.gcloud_syncer import GCloudSync
-# from keras.preprocessing.text import Tokenizer
-from sklearn.metrics import confusion_matrix
+from hate.constants import MAX_LEN
 from hate.entity.config_entity import ModelEvaluationConfig
 from hate.entity.artifact_entity import ModelEvaluationArtifacts, ModelTrainerArtifacts, DataTransformationArtifacts
 
 
 class ModelEvaluation:
-    def __init__(self, model_evaluation_config: ModelEvaluationConfig,
-                 model_trainer_artifacts: ModelTrainerArtifacts,
-                 data_transformation_artifacts: DataTransformationArtifacts):
+    def __init__(self,
+                 evaluation_config: ModelEvaluationConfig,
+                 trainer_artifacts: ModelTrainerArtifacts,
+                 transformation_artifacts: DataTransformationArtifacts):
         """
-        :param model_evaluation_config: Configuration for model eva            model = model_architecture.get_model()
- data transformation artifact stage
-        :param model_trainer_artifacts: Output reference of model trainer artifact stage
+        Initializes the ModelEvaluation class with required configuration and artifact information.
+        :param evaluation_config: Configuration for model evaluation.
+        :param trainer_artifacts: Artifacts produced by the model training stage.
+        :param transformation_artifacts: Artifacts produced by the data transformation stage.
         """
+        self.evaluation_config = evaluation_config
+        self.trainer_artifacts = trainer_artifacts
+        self.transformation_artifacts = transformation_artifacts
 
-        self.model_evaluation_config = model_evaluation_config
-        self.model_trainer_artifacts = model_trainer_artifacts
-        self.data_transformation_artifacts = data_transformation_artifacts
-        self.gcloud = GCloudSync()
-
-
-    
-    def get_best_model_from_gcloud(self) -> str:
+    def fetch_best_model_path(self) -> str:
         """
-        :return: Fetch best model from gcloud storage and store inside best model directory path
+        Creates the best model directory (if not exists) and returns the path for the best model file.
+        :return: Full path of the best model.
         """
         try:
-            logging.info("Entered the get_best_model_from_gcloud method of Model Evaluation class")
-
-            os.makedirs(self.model_evaluation_config.BEST_MODEL_DIR_PATH, exist_ok=True)
-
-            self.gcloud.sync_folder_from_gcloud(self.model_evaluation_config.BUCKET_NAME,
-                                                self.model_evaluation_config.MODEL_NAME,
-                                                self.model_evaluation_config.BEST_MODEL_DIR_PATH)
-
-            best_model_path = os.path.join(self.model_evaluation_config.BEST_MODEL_DIR_PATH,
-                                           self.model_evaluation_config.MODEL_NAME)
-            logging.info("Exited the get_best_model_from_gcloud method of Model Evaluation class")
+            os.makedirs(self.evaluation_config.BEST_MODEL_DIR_PATH, exist_ok=True)
+            best_model_path = os.path.join(self.evaluation_config.BEST_MODEL_DIR_PATH,
+                                           self.evaluation_config.MODEL_NAME)
+            logging.info("Fetched best model path from cloud storage")
             return best_model_path
         except Exception as e:
-            raise CustomException(e, sys) from e 
-        
+            raise CustomException(e, sys) from e
 
-    
-    def evaluate(self):
+    def _load_test_data(self):
         """
-
-        :param model: Currently trained model or best model from gcloud storage
-        :param data_loader: Data loader for validation dataset
-        :return: loss
+        Loads the test data and prepares the text sequences.
+        :return: A tuple of (padded_test_sequences, y_test, tokenizer)
         """
         try:
-            logging.info("Entering into to the evaluate function of Model Evaluation class")
-            print(self.model_trainer_artifacts.x_test_path)
+            # Load test data
+            x_test = pd.read_csv(self.trainer_artifacts.x_test_path, index_col=0)
+            y_test = pd.read_csv(self.trainer_artifacts.y_test_path, index_col=0)
 
-            x_test = pd.read_csv(self.model_trainer_artifacts.x_test_path,index_col=0)
-            print(x_test)
-            y_test = pd.read_csv(self.model_trainer_artifacts.y_test_path,index_col=0)
-
+            # Load tokenizer from pickle file
             with open('tokenizer.pickle', 'rb') as handle:
                 tokenizer = pickle.load(handle)
 
-            load_model=keras.models.load_model(self.model_trainer_artifacts.trained_model_path)
-
-            x_test = x_test['tweet'].astype(str)
-
-            x_test = x_test.squeeze()
+            # Convert tweet column to string and prepare sequences
+            x_test = x_test['tweet'].astype(str).squeeze()
             y_test = y_test.squeeze()
 
             test_sequences = tokenizer.texts_to_sequences(x_test)
-            test_sequences_matrix = pad_sequences(test_sequences,maxlen=MAX_LEN)
-            print(f"----------{test_sequences_matrix}------------------")
+            padded_sequences = pad_sequences(test_sequences, maxlen=MAX_LEN)
 
-            print(f"-----------------{x_test.shape}--------------")
-            print(f"-----------------{y_test.shape}--------------")
-            accuracy = load_model.evaluate(test_sequences_matrix,y_test)
-            logging.info(f"the test accuracy is {accuracy}")
-
-            lstm_prediction = load_model.predict(test_sequences_matrix)
-            res = []
-            for prediction in lstm_prediction:
-                if prediction[0] < 0.5:
-                    res.append(0)
-                else:
-                    res.append(1)
-            print(confusion_matrix(y_test,res))
-            logging.info(f"the confusion_matrix is {confusion_matrix(y_test,res)} ")
-            return accuracy
+            return padded_sequences, y_test, tokenizer
         except Exception as e:
             raise CustomException(e, sys) from e
-        
 
-    
+    def evaluate_model(self, model) -> float:
+        """
+        Evaluates the given model on the test dataset.
+        :param model: Keras model to evaluate.
+        :return: Evaluation metric (accuracy or loss depending on model.compile) of the model.
+        """
+        try:
+            padded_sequences, y_test, _ = self._load_test_data()
+
+            # Evaluate the model on test data
+            evaluation_score = model.evaluate(padded_sequences, y_test, verbose=0)
+            logging.info(f"Evaluation score: {evaluation_score}")
+
+            # Get predictions and compute confusion matrix
+            predictions = model.predict(padded_sequences)
+            predicted_labels = [0 if pred[0] < 0.5 else 1 for pred in predictions]
+            conf_matrix = confusion_matrix(y_test, predicted_labels)
+            logging.info(f"Confusion Matrix: {conf_matrix}")
+
+            return evaluation_score
+        except Exception as e:
+            raise CustomException(e, sys) from e
+
     def initiate_model_evaluation(self) -> ModelEvaluationArtifacts:
         """
-            Method Name :   initiate_model_evaluation
-            Description :   This function is used to initiate all steps of the model evaluation
-
-            Output      :   Returns model evaluation artifact
-            On Failure  :   Write an exception log and then raise an exception
+        Initiates the model evaluation process:
+         - Loads the currently trained model and evaluates it.
+         - Fetches the best model (if available) from storage and evaluates it.
+         - Compares the evaluation metrics and decides whether to accept the new model.
+        :return: ModelEvaluationArtifacts with the decision.
         """
-        logging.info("Initiate Model Evaluation")
+        logging.info("Initiating model evaluation process")
         try:
+            # Load the currently trained model and evaluate it
+            trained_model = keras.models.load_model(self.trainer_artifacts.trained_model_path)
+            trained_model_score = self.evaluate_model(trained_model)
 
-            logging.info("Loading currently trained model")
-            trained_model=keras.models.load_model(self.model_trainer_artifacts.trained_model_path)
-            with open('tokenizer.pickle', 'rb') as handle:
-                load_tokenizer = pickle.load(handle)
+            # Fetch best model path from cloud storage
+            best_model_path = self.fetch_best_model_path()
 
-            trained_model_accuracy = self.evaluate()
-
-            logging.info("Fetch best model from gcloud storage")
-            best_model_path = self.get_best_model_from_gcloud()
-
-            logging.info("Check is best model present in the gcloud storage or not ?")
-            if os.path.isfile(best_model_path) is False:
-                is_model_accepted = True
-                logging.info("glcoud storage model is false and currently trained model accepted is true")
-
+            # If no best model exists, accept the trained model
+            if not os.path.isfile(best_model_path):
+                accept_new_model = True
+                logging.info("No best model found. Accepting the newly trained model.")
             else:
-                logging.info("Load best model fetched from gcloud storage")
-                best_model=keras.models.load_model(best_model_path)
-                best_model_accuracy= self.evaluate()
+                # Load and evaluate the best model
+                best_model = keras.models.load_model(best_model_path)
+                best_model_score = self.evaluate_model(best_model)
 
-                logging.info("Comparing loss between best_model_loss and trained_model_loss ? ")
-                if best_model_accuracy > trained_model_accuracy:
-                    is_model_accepted = True
-                    logging.info("Trained model not accepted")
+                # Accept the new model only if it outperforms the best model
+                if trained_model_score > best_model_score:
+                    accept_new_model = True
+                    logging.info("Newly trained model outperforms the best model. New model accepted.")
                 else:
-                    is_model_accepted = False
-                    logging.info("Trained model accepted")
+                    accept_new_model = False
+                    logging.info("Newly trained model did not outperform the best model. New model rejected.")
 
-            model_evaluation_artifacts = ModelEvaluationArtifacts(is_model_accepted=is_model_accepted)
-            logging.info("Returning the ModelEvaluationArtifacts")
-            return model_evaluation_artifacts
+            evaluation_artifact = ModelEvaluationArtifacts(is_model_accepted=accept_new_model)
+            logging.info("Model evaluation process completed")
+            return evaluation_artifact
 
         except Exception as e:
             raise CustomException(e, sys) from e
-
-
-

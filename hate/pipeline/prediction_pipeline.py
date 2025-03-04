@@ -4,27 +4,21 @@ import keras
 import pickle
 from keras.utils import pad_sequences
 from hate.logger import logging
-from hate.constants import MODEL_NAME  # Ensure MODEL_NAME is defined in your constants
+from hate.constants import MODEL_NAME  
 from hate.exception import CustomException
 from hate.components.data_transforamation import DataTransformation
 from hate.entity.config_entity import DataTransformationConfig
 from hate.entity.artifact_entity import DataIngestionArtifacts
 
-# -----------------------------------------------
-# Global Initialization: Load the model and tokenizer once
-# -----------------------------------------------
-
 # Define the paths for your model and tokenizer
 MODEL_PATH = os.path.join("artifacts", "PredictModel", MODEL_NAME)
-TOKENIZER_PATH = "tokenizer.pickle"  # Adjust the path if necessary
+TOKENIZER_PATH = "tokenizer.pickle"  
 
 try:
     GLOBAL_MODEL = keras.models.load_model(MODEL_PATH)
     with open(TOKENIZER_PATH, 'rb') as handle:
         GLOBAL_TOKENIZER = pickle.load(handle)
-    #logging.info("Global model and tokenizer loaded successfully")
 except Exception as e:
-    #logging.error("Error loading global model/tokenizer", exc_info=True)
     raise CustomException(e, sys)
 
 # -----------------------------------------------

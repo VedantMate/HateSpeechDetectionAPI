@@ -5,23 +5,19 @@ import string
 import pandas as pd
 import nltk
 from nltk.corpus import stopwords
-nltk.download('stopwords')
 from sklearn.model_selection import train_test_split
 from hate.logger import logging 
 from hate.exception import CustomException
 from hate.entity.config_entity import DataTransformationConfig
 from hate.entity.artifact_entity import DataIngestionArtifacts, DataTransformationArtifacts
 
-
+"""Read the jupiter notebook experiment for the data transformation and implement the same in the below class"""
 class DataTransformation:
     def __init__(self,data_transformation_config: DataTransformationConfig,data_ingestion_artifacts:DataIngestionArtifacts):
         self.data_transformation_config = data_transformation_config
         self.data_ingestion_artifacts = data_ingestion_artifacts
 
-    
-
     def imbalance_data_cleaning(self):
-
         try:
             logging.info("Entered into the imbalance_data_cleaning function")
             imbalance_data=pd.read_csv(self.data_ingestion_artifacts.imbalance_data_file_path)
@@ -58,10 +54,7 @@ class DataTransformation:
         except Exception as e:
             raise CustomException(e,sys) from e
         
-
-    
     def concat_dataframe(self):
-
         try:
             logging.info("Entered into the concat_dataframe function")
             # Let's concatinate both the data into a single data frame.
@@ -77,7 +70,6 @@ class DataTransformation:
     
 
     def concat_data_cleaning(self, words):
-
         try:
             logging.info("Entered into the concat_data_cleaning function")
             # Let's apply stemming and stopwords on the data
@@ -99,8 +91,6 @@ class DataTransformation:
 
         except Exception as e:
             raise CustomException(e, sys) from e
-        
-
     
 
     def initiate_data_transformation(self) -> DataTransformationArtifacts:

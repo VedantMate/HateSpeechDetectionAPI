@@ -73,18 +73,10 @@ class ModelTrainer:
             logging.info("Entered the initiate_model_trainer function ")
             x_train,x_test,y_train,y_test = self.spliting_data(csv_path=self.data_transformation_artifacts.transformed_data_path)
             model_architecture = ModelArchitecture()   
-
             model = model_architecture.get_model()
-
-
-
             logging.info(f"Xtrain size is : {x_train.shape}")
-
             logging.info(f"Xtest size is : {x_test.shape}")
-
             sequences_matrix,tokenizer =self.tokenizing(x_train)
-
-
             logging.info("Entered into model training")
             model.fit(sequences_matrix, y_train, 
                         batch_size=self.model_trainer_config.BATCH_SIZE, 
@@ -92,19 +84,15 @@ class ModelTrainer:
                         validation_split=self.model_trainer_config.VALIDATION_SPLIT, 
                         )
             logging.info("Model training finished")
-
-            
+        
             with open('tokenizer.pickle', 'wb') as handle:
                 pickle.dump(tokenizer, handle, protocol=pickle.HIGHEST_PROTOCOL)
             os.makedirs(self.model_trainer_config.TRAINED_MODEL_DIR,exist_ok=True)
-
-
 
             logging.info("saving the model")
             model.save(self.model_trainer_config.TRAINED_MODEL_PATH)
             x_test.to_csv(self.model_trainer_config.X_TEST_DATA_PATH)
             y_test.to_csv(self.model_trainer_config.Y_TEST_DATA_PATH)
-
             x_train.to_csv(self.model_trainer_config.X_TRAIN_DATA_PATH)
 
             model_trainer_artifacts = ModelTrainerArtifacts(

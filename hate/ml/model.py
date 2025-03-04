@@ -11,7 +11,6 @@ class ModelArchitecture:
     def __init__(self):
         pass
 
-    
     def get_model(self):
         model = Sequential()
         model.add(Embedding(MAX_WORDS, 100,input_length=MAX_LEN))
